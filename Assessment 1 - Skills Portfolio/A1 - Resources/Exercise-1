@@ -1,0 +1,209 @@
+"""
+Exercise 1 - Maths Quiz (Tkinter)
+
+A 10-question arithmetic quiz with three difficulty levels.
+Scoring: 10 points for a correct first attempt, 5 for a correct second
+attempt, 0 if both attempts are wrong (maximum score = 100).
+"""
+
+
+import random
+import tkinter as tk
+from tkinter import messagebox
+
+# --- Constants -------------------------------------------------------------
+NUM_QUESTIONS = 10
+POINTS_FIRST_TRY = 10
+POINTS_SECOND_TRY = 5
+
+# Difficulty level -> (min, max) value for the numbers in each question
+LEVELS = {
+    1: ("Easy", 0, 9),            # single digit
+    2: ("Moderate", 10, 99),      # double digit
+    3: ("Advanced", 1000, 9999),  # four digit
+}
+
+
+# --- Pure logic functions (no GUI, so they are easy to test) ---------------
+def randomInt(level):
+    """Return a random integer whose size depends on the difficulty level."""
+    _, low, high = LEVELS[level]
+    return random.randint(low, high)
+
+
+def decideOperation():
+    """Randomly choose addition or subtraction and return '+' or '-'."""
+    return random.choice(["+", "-"])
+
+
+def isCorrect(user_answer, correct_answer):
+    """Return True if the user's answer matches the correct answer."""
+    return user_answer == correct_answer
+
+
+def getRank(score):
+    """Convert a score out of 100 into a letter rank."""
+    if score > 90:
+        return "A+"
+    if score >= 80:
+        return "A"
+    if score >= 70:
+        return "B"
+    if score >= 60:
+        return "C"
+    if score >= 50:
+        return "D"
+    return "F"
+
+
+# --- GUI application -------------------------------------------------------
+class MathsQuiz:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Maths Quiz")
+        self.root.geometry("420x340")
+        self.root.resizable(False, False)
+
+        # Quiz state
+        self.level = 1
+        self.score = 0
+        self.question_number = 0
+        self.attempt = 1
+        self.num1 = 0
+        self.num2 = 0
+        self.operation = "+"
+        self.answer = 0
+
+        # One frame holds whatever screen is showing; we clear it between screens
+        self.frame = tk.Frame(self.root, padx=20, pady=20)
+        self.frame.pack(fill="both", expand=True)
+
+        self.displayMenu()
+
+    def clearScreen(self):
+        """Remove every widget from the current screen."""
+        for widget in self.frame.winfo_children():
+            widget.destroy()
+
+    # --- Screen 1: difficulty menu ---
+    def displayMenu(self):
+        """Show the difficulty level menu at the start of each quiz."""
+        self.clearScreen()
+        tk.Label(self.frame, text="DIFFICULTY LEVEL",
+                 font=("Arial", 18, "bold")).pack(pady=(10, 20))
+
+        for number, (name, _, _) in LEVELS.items():
+            tk.Button(self.frame, text=f"{number}. {name}", width=20,
+                      font=("Arial", 12),
+                      command=lambda n=number: self.startQuiz(n)).pack(pady=5)
+
+    def startQuiz(self, level):
+        """Reset the state for a new game at the chosen level."""
+        self.level = level
+        self.score = 0
+        self.question_number = 0
+        self.nextQuestion()
+
+    # --- Screen 2: question ---
+    def nextQuestion(self):
+        """Generate a new question, or finish if all 10 have been asked."""
+        if self.question_number >= NUM_QUESTIONS:
+            self.displayResults()
+            return
+
+        self.question_number += 1
+        self.attempt = 1
+        self.num1 = randomInt(self.level)
+        self.num2 = randomInt(self.level)
+        self.operation = decideOperation()
+        self.answer = (self.num1 + self.num2 if self.operation == "+"
+                       else self.num1 - self.num2)
+        self.displayProblem()
+
+    def displayProblem(self):
+        """Show the question and an entry box for the user's answer."""
+        self.clearScreen()
+        tk.Label(self.frame,
+                 text=f"Question {self.question_number} of {NUM_QUESTIONS}"
+                      f"     Score: {self.score}",
+                 font=("Arial", 11)).pack(pady=(0, 15))
+
+        tk.Label(self.frame,
+                 text=f"{self.num1} {self.operation} {self.num2} =",
+                 font=("Arial", 26, "bold")).pack(pady=10)
+
+        self.entry = tk.Entry(self.frame, font=("Arial", 16), width=10,
+                              justify="center")
+        self.entry.pack(pady=10)
+        self.entry.focus()
+        self.entry.bind("<Return>", lambda event: self.checkAnswer())
+
+        self.feedback = tk.Label(self.frame, text="", font=("Arial", 12))
+        self.feedback.pack(pady=5)
+
+        self.submit_button = tk.Button(self.frame, text="Submit", width=12,
+                                       font=("Arial", 12),
+                                       command=self.checkAnswer)
+        self.submit_button.pack(pady=5)
+
+    def checkAnswer(self):
+        """Read the answer, mark it, and move on or allow a second attempt."""
+        text = self.entry.get().strip()
+        try:
+            user_answer = int(text)
+        except ValueError:
+            # Invalid input should not use up an attempt
+            self.feedback.config(text="Please enter a whole number.", fg="orange")
+            return
+
+        if isCorrect(user_answer, self.answer):
+            points = POINTS_FIRST_TRY if self.attempt == 1 else POINTS_SECOND_TRY
+            self.score += points
+            self.feedback.config(text=f"Correct! +{points} points", fg="green")
+            self.lockInput()
+            self.root.after(900, self.nextQuestion)
+        elif self.attempt == 1:
+            self.attempt = 2
+            self.feedback.config(text="Wrong - you have one more try!", fg="red")
+            self.entry.delete(0, tk.END)
+        else:
+            self.feedback.config(
+                text=f"Wrong. The answer was {self.answer}.", fg="red")
+            self.lockInput()
+            self.root.after(1500, self.nextQuestion)
+
+    def lockInput(self):
+        """Stop double-submissions while we wait to show the next question."""
+        self.entry.config(state="disabled")
+        self.entry.unbind("<Return>")
+        self.submit_button.config(state="disabled")
+
+    # --- Screen 3: results ---
+    def displayResults(self):
+        """Show the final score out of 100, the rank, and a replay option."""
+        self.clearScreen()
+        rank = getRank(self.score)
+
+        tk.Label(self.frame, text="Quiz Complete!",
+                 font=("Arial", 20, "bold")).pack(pady=(10, 15))
+        tk.Label(self.frame, text=f"Score: {self.score} / 100",
+                 font=("Arial", 16)).pack(pady=5)
+        tk.Label(self.frame, text=f"Rank: {rank}",
+                 font=("Arial", 22, "bold")).pack(pady=5)
+
+        tk.Label(self.frame, text="Would you like to play again?",
+                 font=("Arial", 12)).pack(pady=(20, 5))
+        tk.Button(self.frame, text="Play Again", width=12,
+                  command=self.displayMenu).pack(pady=3)
+        tk.Button(self.frame, text="Quit", width=12,
+                  command=self.root.destroy).pack(pady=3)
+
+
+def main():
+    root = tk.Tk()
+    MathsQuiz(root)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()
