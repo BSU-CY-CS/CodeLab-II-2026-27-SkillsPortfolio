@@ -1,0 +1,141 @@
+"""
+Exercise 2 - Alexa tell me a Joke (Tkinter)
+
+A joke-telling assistant. It loads jokes from randomJokes.txt (one joke per
+line, setup and punchline separated by a question mark), shows a random
+setup, then reveals the punchline on request.
+"""
+
+import os
+import random
+import tkinter as tk
+from tkinter import messagebox
+
+JOKES_FILE = "randomJokes.txt"
+
+# Look next to this script first, then in the course resources folder
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SEARCH_PATHS = [
+    os.path.join(SCRIPT_DIR, JOKES_FILE),
+    os.path.join(SCRIPT_DIR, "..", "A1 - Resources", JOKES_FILE),
+]
+
+
+# Logic functions (no GUI) 
+def findJokesFile():
+    """Return the path of the jokes file, or None if it cannot be found."""
+    for path in SEARCH_PATHS:
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def loadJokes(path):
+    """Read the file and return a list of (setup, punchline) tuples.
+
+    Each line is split at the FIRST question mark. The question mark stays
+    on the setup so it reads naturally. Blank lines and lines without a
+    question mark are skipped.
+    """
+    jokes = []
+    with open(path, encoding="utf-8") as file:
+        for line in file:
+            line = line.strip()
+            if "?" not in line:
+                continue
+            setup, punchline = line.split("?", 1)
+            setup, punchline = setup.strip() + "?", punchline.strip()
+            if punchline:
+                jokes.append((setup, punchline))
+    return jokes
+
+
+def pickJoke(jokes, previous=None):
+    """Return a random joke, avoiding an immediate repeat when possible."""
+    if len(jokes) > 1 and previous in jokes:
+        choices = [joke for joke in jokes if joke != previous]
+    else:
+        choices = jokes
+    return random.choice(choices)
+
+
+#  GUI application 
+class JokeApp:
+    def __init__(self, root, jokes):
+        self.root = root
+        self.jokes = jokes
+        self.current = None  # the (setup, punchline) currently on screen
+
+        self.root.title("Alexa Joke Assistant")
+        self.root.geometry("560x340")
+        self.root.resizable(False, False)
+
+        tk.Label(root, text="Alexa Joke Assistant",
+                 font=("Arial", 18, "bold")).pack(pady=(15, 10))
+
+        # wraplength makes long jokes wrap instead of running off the window
+        self.setup_label = tk.Label(root, text="Click the button to hear a joke!",
+                                    font=("Arial", 14), wraplength=500,
+                                    height=3)
+        self.setup_label.pack(pady=5)
+
+        self.punchline_label = tk.Label(root, text="", font=("Arial", 14, "bold"),
+                                        fg="#b03a2e", wraplength=500, height=3)
+        self.punchline_label.pack(pady=5)
+
+        button_frame = tk.Frame(root)
+        button_frame.pack(pady=10)
+
+        self.tell_button = tk.Button(button_frame, text="Alexa tell me a Joke",
+                                     width=20, command=self.tellJoke)
+        self.tell_button.grid(row=0, column=0, padx=5, pady=5)
+
+        self.punchline_button = tk.Button(button_frame, text="Show Punchline",
+                                          width=20, state="disabled",
+                                          command=self.showPunchline)
+        self.punchline_button.grid(row=0, column=1, padx=5, pady=5)
+
+        self.next_button = tk.Button(button_frame, text="Next Joke", width=20,
+                                     state="disabled", command=self.tellJoke)
+        self.next_button.grid(row=1, column=0, padx=5, pady=5)
+
+        tk.Button(button_frame, text="Quit", width=20,
+                  command=self.root.destroy).grid(row=1, column=1, padx=5, pady=5)
+
+    def tellJoke(self):
+        """Pick a random joke and show only its setup."""
+        self.current = pickJoke(self.jokes, self.current)
+        self.setup_label.config(text=self.current[0])
+        self.punchline_label.config(text="")
+        self.punchline_button.config(state="normal")
+        self.next_button.config(state="normal")
+
+    def showPunchline(self):
+        """Reveal the punchline below the setup."""
+        if self.current:
+            self.punchline_label.config(text=self.current[1])
+            self.punchline_button.config(state="disabled")
+
+
+def main():
+    root = tk.Tk()
+    path = findJokesFile()
+    if path is None:
+        messagebox.showerror("File not found",
+                             f"Could not find {JOKES_FILE}.\n"
+                             "Place it next to this script.")
+        root.destroy()
+        return
+
+    jokes = loadJokes(path)
+    if not jokes:
+        messagebox.showerror("No jokes", f"{JOKES_FILE} contains no valid jokes.")
+        root.destroy()
+        return
+
+    JokeApp(root, jokes)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()
