@@ -6,7 +6,8 @@ Scoring: 10 points for a correct first attempt, 5 for a correct second
 attempt, 0 if both attempts are wrong (maximum score = 100).
 
 Styling: dark "Midnight amber" theme with custom rounded buttons that zoom in
-smoothly when the mouse hovers over them.
+smoothly when the mouse hovers over them. A Back button lets the player
+return to the difficulty menu mid-quiz.
 """
 
 import math
@@ -14,7 +15,7 @@ import random
 import tkinter as tk
 from tkinter import messagebox
 
-# Quiz constants 
+#  Quiz constants 
 NUM_QUESTIONS = 10
 POINTS_FIRST_TRY = 10
 POINTS_SECOND_TRY = 5
@@ -26,7 +27,12 @@ LEVELS = {
     3: ("Advanced", 1000, 9999),  # four digit
 }
 
-# Theme colours: Midnight  
+# The menu buttons widen with difficulty so the stack forms a triangle
+# (narrow Easy at the top, wide Advanced at the bottom).
+MENU_MIN_WIDTH = 150   # width of the Easy button
+MENU_WIDTH_STEP = 80   # extra width for each step up in difficulty
+
+# Theme colours: Midnight amber (dark charcoal + golden accent) 
 BG = "#17171C"            # window background
 CARD = "#24242D"          # panel the content sits on
 BORDER = "#363642"        # soft outline
@@ -46,7 +52,7 @@ DISABLED_TEXT = "#6E6E7C"
 FONT = "Helvetica"
 
 
-# Pure logic functions  
+#  Pure logic functions 
 def randomInt(level):
     """Return a random integer whose size depends on the difficulty level."""
     _, low, high = LEVELS[level]
@@ -128,7 +134,7 @@ class RoundedButton(tk.Canvas):
         self.bind("<ButtonRelease-1>", self._onRelease)
         self._draw()
 
-    # --- drawing ---
+    # drawing 
     def _roundRect(self, x0, y0, x1, y1, r, **options):
         """Draw a rounded rectangle as a polygon whose corners are quarter
         circles (10 points per corner), giving a properly round radius."""
@@ -160,7 +166,7 @@ class RoundedButton(tk.Canvas):
         self.create_text(self._cw / 2, self._ch / 2, text=self._text, fill=text_color,
                          font=(FONT, -round(self._font_px * s), "bold"))
 
-    # --- animation ---
+    #  animation 
     def _target(self):
         """The size the button is currently trying to reach."""
         if self._state == "disabled":
@@ -247,7 +253,7 @@ class RoundedButton(tk.Canvas):
         super().destroy()
 
 
-#  GUI application 
+# GUI application 
 class MathsQuiz:
     def __init__(self, root):
         self.root = root
@@ -265,6 +271,7 @@ class MathsQuiz:
         self.num2 = 0
         self.operation = "+"
         self.answer = 0
+        self.pending_job = None  # scheduled "next question", if any
 
         # A white card on the beige window. Every screen is built inside it
         # and clearScreen() empties it between screens.
@@ -275,11 +282,22 @@ class MathsQuiz:
 
         self.displayMenu()
 
-    # --- helpers ---
+    #  helpers 
     def clearScreen(self):
         """Remove every widget from the current screen."""
         for widget in self.frame.winfo_children():
             widget.destroy()
+
+    def schedule(self, delay_ms, function):
+        """Run `function` after a delay, remembering it so it can be cancelled."""
+        self.pending_job = self.root.after(delay_ms, function)
+
+    def cancelPending(self):
+        """Cancel a scheduled next-question so it can't fire after leaving
+        the quiz (e.g. when the Back button is pressed during the pause)."""
+        if self.pending_job is not None:
+            self.root.after_cancel(self.pending_job)
+            self.pending_job = None
 
     def label(self, text, size, bold=False, color=TEXT, **options):
         """Create a themed label inside the card."""
@@ -287,16 +305,21 @@ class MathsQuiz:
         return tk.Label(self.frame, text=text, bg=CARD, fg=color,
                         font=(FONT, size, weight), **options)
 
-    # Screen 1: difficulty menu 
+    #  Screen 1: difficulty menu 
     def displayMenu(self):
         """Show the difficulty level menu at the start of each quiz."""
+        self.cancelPending()
         self.clearScreen()
         self.label("Maths Quiz", 11, color=MUTED).pack(pady=(25, 0))
         self.label("DIFFICULTY LEVEL", 20, bold=True).pack(pady=(2, 25))
 
+        # Each level is wider than the last, so the buttons form a triangle
+        # (pack() centres them, giving a symmetrical pyramid shape).
         for number, (name, _, _) in LEVELS.items():
+            width = MENU_MIN_WIDTH + (number - 1) * MENU_WIDTH_STEP
             RoundedButton(self.frame, f"{number}. {name}",
-                          lambda n=number: self.startQuiz(n)).pack(pady=4)
+                          lambda n=number: self.startQuiz(n),
+                          width=width).pack(pady=4)
 
     def startQuiz(self, level):
         """Reset the state for a new game at the chosen level."""
@@ -305,9 +328,10 @@ class MathsQuiz:
         self.question_number = 0
         self.nextQuestion()
 
-    # --- Screen 2: question ---
+    #  Screen 2: question 
     def nextQuestion(self):
         """Generate a new question, or finish if all 10 have been asked."""
+        self.pending_job = None
         if self.question_number >= NUM_QUESTIONS:
             self.displayResults()
             return
@@ -325,9 +349,16 @@ class MathsQuiz:
         """Show the question and an entry box for the user's answer."""
         self.clearScreen()
 
+        # Back button, top left
+        top = tk.Frame(self.frame, bg=CARD)
+        top.pack(fill="x")
+        RoundedButton(top, "\u2190 Back", self.backToMenu, width=100,
+                      height=34, radius=17, style="secondary",
+                      font_px=14).pack(side="left")
+
         self.label(f"Question {self.question_number} of {NUM_QUESTIONS}"
                    f"   \u2022   Score: {self.score}", 12,
-                   color=MUTED).pack(pady=(20, 10))
+                   color=MUTED).pack(pady=(10, 8))
 
         self.label(f"{self.num1} {self.operation} {self.num2} =", 30,
                    bold=True).pack(pady=8)
@@ -350,6 +381,15 @@ class MathsQuiz:
                                            self.checkAnswer, width=160)
         self.submit_button.pack(pady=4)
 
+    def backToMenu(self):
+        """Leave the quiz and return to the difficulty menu (after confirming,
+        because the current score would be lost)."""
+        if messagebox.askyesno("Back to menu",
+                               "Go back to the difficulty menu?\n"
+                               "Your progress in this quiz will be lost.",
+                               parent=self.root):
+            self.displayMenu()  # displayMenu also cancels any pending timer
+
     def checkAnswer(self):
         """Read the answer, mark it, and move on or allow a second attempt."""
         text = self.entry.get().strip()
@@ -365,7 +405,7 @@ class MathsQuiz:
             self.score += points
             self.feedback.config(text=f"Correct! +{points} points", fg=GOOD)
             self.lockInput()
-            self.root.after(900, self.nextQuestion)
+            self.schedule(900, self.nextQuestion)
         elif self.attempt == 1:
             self.attempt = 2
             self.feedback.config(text="Wrong - you have one more try!", fg=BAD)
@@ -374,7 +414,7 @@ class MathsQuiz:
             self.feedback.config(
                 text=f"Wrong. The answer was {self.answer}.", fg=BAD)
             self.lockInput()
-            self.root.after(1500, self.nextQuestion)
+            self.schedule(1500, self.nextQuestion)
 
     def lockInput(self):
         """Stop double-submissions while we wait to show the next question."""
@@ -382,7 +422,7 @@ class MathsQuiz:
         self.entry.unbind("<Return>")
         self.submit_button.config(state="disabled")
 
-    # --- Screen 3: results ---
+    #  Screen 3: results 
     def displayResults(self):
         """Show the final score out of 100, the rank, and a replay option."""
         self.clearScreen()
