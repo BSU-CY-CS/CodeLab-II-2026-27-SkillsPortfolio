@@ -1,11 +1,17 @@
 """
 Exercise 2 - Alexa tell me a Joke (Tkinter)
 
-A joke-telling assistant. It loads jokes from randomJokes.txt (one joke per
-line, setup and punchline separated by a question mark), shows a random
-setup, then reveals the punchline on request.
+A joke-telling assistant styled like a comedy club. It loads jokes from
+randomJokes.txt (one joke per line, setup and punchline separated by a
+question mark), shows a random setup, then reveals the punchline on request.
+
+Styling: "Spotlight club" theme, rounded buttons that zoom on hover,
+chasing marquee lights, "thinking" dots, a typewriter effect and a
+punchline flash.
 """
 
+
+import math
 import os
 import random
 import tkinter as tk
@@ -20,8 +26,33 @@ SEARCH_PATHS = [
     os.path.join(SCRIPT_DIR, "..", "A1 - Resources", JOKES_FILE),
 ]
 
+#  Theme colours: "Spotlight" 
+CURTAIN = "#4A0F1B"         # window background: burgundy curtain
+SPOTLIGHT = "#FFF3D6"       # cream card the joke sits on
+SPOTLIGHT_HOVER = "#F6E6BF" # secondary button hover fill
+GOLD = "#F2B33D"            # primary buttons and title
+GOLD_HOVER = "#F7C24F"      # lighter gold when hovered
+GOLD_BORDER = "#D9A441"     # card outline
+INK = "#2A1A12"             # main text
+PUNCHLINE = "#A3213A"       # punchline red
+PUNCHLINE_DARK = "#7A1A2B"  # text on outlined buttons
+FLASH = "#D9961A"           # colour the punchline flashes to
+MUTED = "#8A6A4F"           # small secondary text
+BULB_OFF = "#7A3A22"        # unlit marquee bulb
+DISABLED_FILL = "#EADFC4"
+DISABLED_TEXT = "#A89878"
+FONT = "Helvetica"
 
-# Logic functions (no GUI) 
+#  Animation timings (milliseconds) 
+TYPE_MS = 28        # delay between typed letters
+THINK_MS = 230      # delay between the "thinking" dots
+THINK_FRAMES = 4    # how many dot frames before a joke appears
+FLASH_MS = 110      # delay between punchline colour flashes
+FLASH_COUNT = 6     # number of flash steps
+MARQUEE_SLOW_MS = 450
+MARQUEE_FAST_MS = 140  # lights speed up while "thinking"
+
+
 def findJokesFile():
     """Return the path of the jokes file, or None if it cannot be found."""
     for path in SEARCH_PATHS:
@@ -59,62 +90,355 @@ def pickJoke(jokes, previous=None):
     return random.choice(choices)
 
 
-#  GUI application 
+#  Custom widgets 
+def makeLabel(parent, text, size, color, bold=False, italic=False, **options):
+    """Create a themed label that matches its parent's background."""
+    style = " ".join(word for word, on in (("bold", bold), ("italic", italic)) if on) or "normal"
+    return tk.Label(parent, text=text, bg=parent.cget("bg"), fg=color,
+                    font=(FONT, size, style), **options)
+
+
+class RoundedButton(tk.Canvas):
+    """A pill-shaped button that smoothly zooms in when the mouse hovers.
+
+    Standard Tkinter buttons cannot be rounded or animated, so this draws
+    the button on a Canvas. The canvas is a little bigger than the button
+    so there is room for it to grow without being clipped.
+    """
+    ZOOM = 1.08       # how much bigger the button gets on hover
+    PRESSED = 0.97    # slight shrink while the mouse button is held down
+    EASING = 0.25     # fraction of the remaining distance moved per frame
+    FRAME_MS = 16     # about 60 frames per second
+
+    STYLES = {
+        "primary": {"fill": GOLD, "hover": GOLD_HOVER,
+                    "text": INK, "outline": GOLD_BORDER},
+        "secondary": {"fill": SPOTLIGHT, "hover": SPOTLIGHT_HOVER,
+                      "text": PUNCHLINE_DARK, "outline": PUNCHLINE},
+    }
+
+    def __init__(self, master, text, command, width=200, height=42,
+                 radius=21, style="primary", font_px=15):
+        pad = int(width * (self.ZOOM - 1) / 2) + 4  # headroom for the zoom
+        self._cw = width + 2 * pad
+        self._ch = height + 2 * pad
+        super().__init__(master, width=self._cw, height=self._ch,
+                         bg=master.cget("bg"), highlightthickness=0, bd=0)
+
+        self._text = text
+        self._command = command
+        self._btn_w, self._btn_h = width, height
+        self._radius = radius
+        self._font_px = font_px
+        self._colors = self.STYLES[style]
+
+        self._state = "normal"
+        self._hover = False
+        self._pressed = False
+        self._scale = 1.0      # current size multiplier
+        self._job = None       # id of the pending animation frame
+
+        self.bind("<Enter>", self._onEnter)
+        self.bind("<Leave>", self._onLeave)
+        self.bind("<ButtonPress-1>", self._onPress)
+        self.bind("<ButtonRelease-1>", self._onRelease)
+        self._draw()
+
+    def _roundRect(self, x0, y0, x1, y1, r, **options):
+        """Draw a rounded rectangle as a polygon whose corners are quarter
+        circles (10 points per corner)."""
+        r = min(r, (x1 - x0) / 2, (y1 - y0) / 2)
+        corners = [(x1 - r, y0 + r, -90), (x1 - r, y1 - r, 0),
+                   (x0 + r, y1 - r, 90), (x0 + r, y0 + r, 180)]
+        points = []
+        for centre_x, centre_y, start_angle in corners:
+            for step in range(10):
+                angle = math.radians(start_angle + step * 10)
+                points.append(centre_x + r * math.cos(angle))
+                points.append(centre_y + r * math.sin(angle))
+        return self.create_polygon(points, **options)
+
+    def _draw(self):
+        self.delete("all")
+        s = self._scale
+        w, h, r = self._btn_w * s, self._btn_h * s, self._radius * s
+        x0, y0 = (self._cw - w) / 2, (self._ch - h) / 2
+
+        if self._state == "disabled":
+            fill, outline, text_color = DISABLED_FILL, DISABLED_FILL, DISABLED_TEXT
+        else:
+            fill = self._colors["hover"] if self._hover else self._colors["fill"]
+            outline, text_color = self._colors["outline"], self._colors["text"]
+
+        self._roundRect(x0, y0, x0 + w, y0 + h, r, fill=fill, outline=outline, width=2)
+        # Negative font size = pixels, which scales smoothly during the zoom
+        self.create_text(self._cw / 2, self._ch / 2, text=self._text, fill=text_color,
+                         font=(FONT, -round(self._font_px * s), "bold"))
+
+    def _target(self):
+        """The size the button is currently trying to reach."""
+        if self._state == "disabled":
+            return 1.0
+        if self._pressed:
+            return self.PRESSED
+        return self.ZOOM if self._hover else 1.0
+
+    def _animate(self):
+        """Start (or restart) moving towards the target size."""
+        if self._job is not None:
+            self.after_cancel(self._job)
+            self._job = None
+        self._step()
+
+    def _step(self):
+        """One animation frame: move part of the way to the target (easing)."""
+        self._job = None
+        try:
+            target = self._target()
+            difference = target - self._scale
+            if abs(difference) < 0.002:
+                self._scale = target
+                self._draw()
+                return
+            self._scale += difference * self.EASING
+            self._draw()
+            self._job = self.after(self.FRAME_MS, self._step)
+        except tk.TclError:
+            pass  # the widget was destroyed mid-animation
+
+    def _onEnter(self, event):
+        self._hover = True
+        self.config(cursor="arrow" if self._state == "disabled" else "hand2")
+        self._animate()
+
+    def _onLeave(self, event):
+        self._hover = False
+        self._pressed = False
+        self._animate()
+
+    def _onPress(self, event):
+        if self._state != "disabled":
+            self._pressed = True
+            self._animate()
+
+    def _onRelease(self, event):
+        if not self._pressed:
+            return
+        self._pressed = False
+        self._animate()
+        # Only count it as a click if the mouse is still over the button
+        if 0 <= event.x <= self._cw and 0 <= event.y <= self._ch:
+            self.invoke()
+
+    def invoke(self):
+        """Run the button's command, as if it had been clicked."""
+        if self._state != "disabled" and self._command:
+            self._command()
+
+    def config(self, **options):
+        """Support config(state=...) and config(text=...) like a tk.Button."""
+        if "state" in options:
+            self._state = options.pop("state")
+            self._animate()
+        if "text" in options:
+            self._text = options.pop("text")
+            self._draw()
+        if options:
+            super().config(**options)
+
+    configure = config
+
+    def destroy(self):
+        if self._job is not None:
+            try:
+                self.after_cancel(self._job)
+            except tk.TclError:
+                pass
+            self._job = None
+        super().destroy()
+
+
+class MarqueeLights(tk.Canvas):
+    """A strip of bulbs that appear to chase along it, like a theatre
+    marquee. Two bulbs in every three are lit and the dark one moves."""
+
+    def __init__(self, master, width=560, bulbs=22, radius=5):
+        super().__init__(master, width=width, height=radius * 2 + 8,
+                         bg=master.cget("bg"), highlightthickness=0, bd=0)
+        self._bulbs = []
+        self._phase = 0
+        self._interval = MARQUEE_SLOW_MS
+        self._job = None
+
+        gap = width / bulbs
+        for index in range(bulbs):
+            x, y = gap * (index + 0.5), radius + 4
+            self._bulbs.append(self.create_oval(
+                x - radius, y - radius, x + radius, y + radius,
+                fill=BULB_OFF, outline=""))
+        self._tick()
+
+    def _tick(self):
+        try:
+            for index, bulb in enumerate(self._bulbs):
+                lit = (index + self._phase) % 3 != 0
+                colour = GOLD if index % 2 == 0 else SPOTLIGHT
+                self.itemconfig(bulb, fill=colour if lit else BULB_OFF)
+            self._phase = (self._phase + 1) % 3
+            self._job = self.after(self._interval, self._tick)
+        except tk.TclError:
+            pass  # the widget was destroyed
+
+    def setFast(self, fast):
+        """Speed the lights up (while 'thinking') or slow them down."""
+        self._interval = MARQUEE_FAST_MS if fast else MARQUEE_SLOW_MS
+
+    def destroy(self):
+        if self._job is not None:
+            try:
+                self.after_cancel(self._job)
+            except tk.TclError:
+                pass
+            self._job = None
+        super().destroy()
+
+
+# GUI application 
 class JokeApp:
     def __init__(self, root, jokes):
         self.root = root
         self.jokes = jokes
-        self.current = None  # the (setup, punchline) currently on screen
+        self.current = None           # the (setup, punchline) on screen
+        self.punchline_shown = False
+        self.busy = False             # True while the setup is being thought of and typed
+        self._job = None              # the single pending animation step, if any
 
-        self.root.title("Alexa Joke Assistant")
-        self.root.geometry("560x340")
-        self.root.resizable(False, False)
+        root.title("Alexa Joke Assistant")
+        root.geometry("640x560")
+        root.resizable(False, False)
+        root.configure(bg=CURTAIN)
 
-        tk.Label(root, text="Alexa Joke Assistant",
-                 font=("Arial", 18, "bold")).pack(pady=(15, 10))
+        makeLabel(root, "Alexa Joke Assistant", 20, GOLD, bold=True).pack(pady=(14, 6))
+        self.top_lights = MarqueeLights(root)
+        self.top_lights.pack()
+
+        card = tk.Frame(root, bg=SPOTLIGHT, highlightthickness=2,
+                        highlightbackground=GOLD_BORDER, highlightcolor=GOLD_BORDER,
+                        padx=18, pady=10)
+        card.pack(fill="x", padx=40, pady=6)
 
         # wraplength makes long jokes wrap instead of running off the window
-        self.setup_label = tk.Label(root, text="Click the button to hear a joke!",
-                                    font=("Arial", 14), wraplength=500,
-                                    height=3)
-        self.setup_label.pack(pady=5)
+        self.setup_label = makeLabel(card, "Click the button to hear a joke!", 16, INK,
+                                     wraplength=540, height=3)
+        self.setup_label.pack(pady=(8, 2))
+        self.punchline_label = makeLabel(card, "", 16, PUNCHLINE, bold=True,
+                                         wraplength=540, height=3)
+        self.punchline_label.pack(pady=2)
+        self.badum_label = makeLabel(card, "", 11, MUTED, italic=True)
+        self.badum_label.pack()
 
-        self.punchline_label = tk.Label(root, text="", font=("Arial", 14, "bold"),
-                                        fg="#b03a2e", wraplength=500, height=3)
-        self.punchline_label.pack(pady=5)
+        buttons = tk.Frame(card, bg=SPOTLIGHT)
+        buttons.pack(pady=(4, 0))
+        self.tell_button = RoundedButton(buttons, "Alexa tell me a Joke",
+                                         self.tellJoke, width=230)
+        self.punchline_button = RoundedButton(buttons, "Show Punchline",
+                                              self.showPunchline, width=230)
+        self.next_button = RoundedButton(buttons, "Next Joke", self.tellJoke, width=230)
+        self.quit_button = RoundedButton(buttons, "Quit", self.root.destroy,
+                                         width=230, style="secondary")
+        self.tell_button.grid(row=0, column=0)
+        self.punchline_button.grid(row=0, column=1)
+        self.next_button.grid(row=1, column=0)
+        self.quit_button.grid(row=1, column=1)
 
-        button_frame = tk.Frame(root)
-        button_frame.pack(pady=10)
+        self.bottom_lights = MarqueeLights(root)
+        self.bottom_lights.pack(pady=(4, 0))
+        self.refreshButtons()
 
-        self.tell_button = tk.Button(button_frame, text="Alexa tell me a Joke",
-                                     width=20, command=self.tellJoke)
-        self.tell_button.grid(row=0, column=0, padx=5, pady=5)
+    #  Animation helpers 
+    # Only one animation step is ever pending, so any new action can stop
+    # whatever is running with cancelAnimation().
+    def later(self, delay_ms, function):
+        """Run `function` after a delay, remembering it so it can be cancelled."""
+        self._job = self.root.after(delay_ms, function)
 
-        self.punchline_button = tk.Button(button_frame, text="Show Punchline",
-                                          width=20, state="disabled",
-                                          command=self.showPunchline)
-        self.punchline_button.grid(row=0, column=1, padx=5, pady=5)
+    def cancelAnimation(self):
+        if self._job is not None:
+            self.root.after_cancel(self._job)
+            self._job = None
 
-        self.next_button = tk.Button(button_frame, text="Next Joke", width=20,
-                                     state="disabled", command=self.tellJoke)
-        self.next_button.grid(row=1, column=0, padx=5, pady=5)
+    def thinking(self, label, then, frames=THINK_FRAMES, frame=0):
+        """Show 1, 2, 3 dots in `label` (like Alexa thinking), then call `then`."""
+        if frame >= frames:
+            self._job = None
+            then()
+            return
+        label.config(text="." * (frame % 3 + 1))
+        self.later(THINK_MS, lambda: self.thinking(label, then, frames, frame + 1))
 
-        tk.Button(button_frame, text="Quit", width=20,
-                  command=self.root.destroy).grid(row=1, column=1, padx=5, pady=5)
+    def typeText(self, label, text, done=None, index=0):
+        """Reveal `text` one letter at a time (typewriter effect)."""
+        label.config(text=text[:index])
+        if index < len(text):
+            self.later(TYPE_MS, lambda: self.typeText(label, text, done, index + 1))
+        else:
+            self._job = None
+            if done:
+                done()
+
+    def flashPunchline(self, count=0):
+        """Flash the punchline between two colours, then show 'Ba-dum-tss!'."""
+        if count >= FLASH_COUNT:
+            self.punchline_label.config(fg=PUNCHLINE)
+            self.badum_label.config(text="Ba-dum-tss!")
+            self._job = None
+            return
+        self.punchline_label.config(fg=FLASH if count % 2 == 0 else PUNCHLINE)
+        self.later(FLASH_MS, lambda: self.flashPunchline(count + 1))
+
+    def setLightsFast(self, fast):
+        self.top_lights.setFast(fast)
+        self.bottom_lights.setFast(fast)
+
+    def refreshButtons(self):
+        """Enable only the buttons that make sense right now."""
+        ready = self.current is not None and not self.busy
+        self.punchline_button.config(
+            state="normal" if ready and not self.punchline_shown else "disabled")
+        self.next_button.config(state="normal" if ready else "disabled")
 
     def tellJoke(self):
-        """Pick a random joke and show only its setup."""
-        self.current = pickJoke(self.jokes, self.current)
-        self.setup_label.config(text=self.current[0])
-        self.punchline_label.config(text="")
-        self.punchline_button.config(state="normal")
-        self.next_button.config(state="normal")
+        """Pick a random joke and show its setup."""
+        self.showJoke(pickJoke(self.jokes, self.current))
+
+    def showJoke(self, joke):
+        self.cancelAnimation()
+        self.current = joke
+        self.punchline_shown = False
+        self.busy = True
+        self.setup_label.config(text="")
+        self.punchline_label.config(text="", fg=PUNCHLINE)
+        self.badum_label.config(text="")
+        self.refreshButtons()
+        self.setLightsFast(True)
+        self.thinking(self.setup_label,
+                      lambda: self.typeText(self.setup_label, joke[0], self.setupDone))
+
+    def setupDone(self):
+        self.busy = False
+        self.setLightsFast(False)
+        self.refreshButtons()
 
     def showPunchline(self):
         """Reveal the punchline below the setup."""
-        if self.current:
-            self.punchline_label.config(text=self.current[1])
-            self.punchline_button.config(state="disabled")
+        if self.current is None or self.punchline_shown or self.busy:
+            return
+        self.punchline_shown = True
+        self.refreshButtons()
+        self.thinking(self.punchline_label,
+                      lambda: self.typeText(self.punchline_label, self.current[1],
+                                            self.flashPunchline),
+                      frames=3)
 
 
 def main():
