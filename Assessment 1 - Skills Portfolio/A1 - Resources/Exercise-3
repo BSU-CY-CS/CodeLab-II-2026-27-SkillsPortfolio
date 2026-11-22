@@ -1,0 +1,289 @@
+"""
+Exercise 3 - Student Manager (Tkinter)
+
+Loads student marks from studentMarks.txt and lets the user analyse and
+manage them through a GUI.
+
+Menu items
+  1. View all student records (with class summary)
+  2. View an individual student record (search by name or student number)
+  3. Show the student with the highest total score
+  4. Show the student with the lowest total score
+"""
+
+import os
+import tkinter as tk
+from dataclasses import dataclass
+from tkinter import messagebox, simpledialog, ttk
+
+# Constants 
+DATA_FILE = "studentMarks.txt"
+NUM_COURSEWORK = 3
+MAX_COURSEWORK_MARK = 20
+MAX_EXAM_MARK = 100
+MAX_TOTAL = NUM_COURSEWORK * MAX_COURSEWORK_MARK + MAX_EXAM_MARK  # 160
+MIN_CODE, MAX_CODE = 1000, 9999
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SEARCH_PATHS = [
+    os.path.join(SCRIPT_DIR, DATA_FILE),
+    os.path.join(SCRIPT_DIR, "..", "A1 - Resources", DATA_FILE),
+]
+
+
+
+# DATA LAYER 
+
+def gradeFor(percentage):
+    """Convert an overall percentage into a letter grade."""
+    if percentage >= 70:
+        return "A"
+    if percentage >= 60:
+        return "B"
+    if percentage >= 50:
+        return "C"
+    if percentage >= 40:
+        return "D"
+    return "F"
+
+
+@dataclass
+class Student:
+    """One student's record. Derived values are properties, so they can
+    never get out of date when a mark is edited."""
+    code: int
+    name: str
+    coursework: list  # the three coursework marks, each out of 20
+    exam: int         # out of 100
+
+    @property
+    def coursework_total(self):
+        return sum(self.coursework)
+
+    @property
+    def total(self):
+        return self.coursework_total + self.exam
+
+    @property
+    def percentage(self):
+        # Multiply first, then divide: avoids float rounding at boundaries
+        # such as exactly 70%.
+        return self.total * 100 / MAX_TOTAL
+
+    @property
+    def grade(self):
+        return gradeFor(self.percentage)
+
+
+def _toInt(text, label):
+    """Convert text to int, raising a user-friendly ValueError if it fails."""
+    try:
+        return int(str(text).strip())
+    except ValueError:
+        raise ValueError(f"{label} must be a whole number.") from None
+
+
+def buildStudent(code, name, c1, c2, c3, exam):
+    """Validate raw values (strings) and return a Student.
+    Raises ValueError with a readable message if anything is invalid.
+    Used for both file loading and the Add/Update forms."""
+    name = str(name).strip()
+    if not name:
+        raise ValueError("Name cannot be empty.")
+    if "," in name:
+        raise ValueError("Name cannot contain a comma.")
+
+    code = _toInt(code, "Student number")
+    if not MIN_CODE <= code <= MAX_CODE:
+        raise ValueError(f"Student number must be between {MIN_CODE} and {MAX_CODE}.")
+
+    marks = []
+    for number, text in enumerate((c1, c2, c3), start=1):
+        mark = _toInt(text, f"Coursework {number}")
+        if not 0 <= mark <= MAX_COURSEWORK_MARK:
+            raise ValueError(f"Coursework {number} must be between 0 and {MAX_COURSEWORK_MARK}.")
+        marks.append(mark)
+
+    exam = _toInt(exam, "Exam mark")
+    if not 0 <= exam <= MAX_EXAM_MARK:
+        raise ValueError(f"Exam mark must be between 0 and {MAX_EXAM_MARK}.")
+
+    return Student(code, name, marks, exam)
+
+
+def codeInUse(students, code, ignore=None):
+    """True if another student (not `ignore`) already has this code."""
+    return any(s.code == code and s is not ignore for s in students)
+
+
+def loadStudents(path):
+    """Read the marks file. Returns (students, problems) where `problems`
+    lists any bad records that were skipped instead of crashing."""
+    students, problems = [], []
+    with open(path, encoding="utf-8") as file:
+        lines = [line.strip() for line in file if line.strip()]
+
+    for number, line in enumerate(lines[1:], start=1):  # line 0 is the count
+        parts = [part.strip() for part in line.split(",")]
+        try:
+            if len(parts) != 6:
+                raise ValueError("expected 6 comma-separated values")
+            student = buildStudent(*parts)
+            if codeInUse(students, student.code):
+                raise ValueError("duplicate student number")
+            students.append(student)
+        except ValueError as error:
+            problems.append(f"Record {number}: {error}")
+    return students, problems
+
+
+def findStudents(students, text):
+    """Return students whose number equals `text` or whose name contains it."""
+    text = text.strip().lower()
+    if not text:
+        return []
+    return [s for s in students if text == str(s.code) or text in s.name.lower()]
+
+
+def classSummary(students):
+    """Return (number of students, average percentage)."""
+    if not students:
+        return 0, 0.0
+    return len(students), sum(s.percentage for s in students) / len(students)
+
+
+def findDataFile():
+    """Return the path of the marks file, or None if it cannot be found."""
+    for path in SEARCH_PATHS:
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+# ===========================================================================
+# GUI LAYER
+# ===========================================================================
+class StudentManager:
+    COLUMNS = (("name", "Name", 170), ("code", "Student No.", 90),
+               ("coursework", "Coursework /60", 110), ("exam", "Exam /100", 80),
+               ("percent", "Overall %", 90), ("grade", "Grade", 60))
+
+    def __init__(self, root, path, students):
+        self.root = root
+        self.path = path
+        self.students = students
+
+        root.title("Student Manager")
+        root.geometry("920x520")
+        root.minsize(760, 400)
+
+        self.buildMenu()
+        self.buildTable()
+        self.viewAll()
+
+    # Layout 
+    def buildMenu(self):
+        menu = tk.Frame(self.root, padx=10, pady=10)
+        menu.pack(side="left", fill="y")
+
+        tk.Label(menu, text="MENU", font=("Arial", 14, "bold")).pack(pady=(0, 8))
+        items = [("1. View all students", self.viewAll),
+                 ("2. View individual student", self.viewIndividual),
+                 ("3. Highest total score", self.showHighest),
+                 ("4. Lowest total score", self.showLowest)]
+
+        for text, command in items:
+            tk.Button(menu, text=text, width=24, command=command).pack(pady=3)
+        ttk.Separator(menu).pack(fill="x", pady=8)
+        tk.Button(menu, text="Quit", width=24, command=self.root.destroy).pack(pady=3)
+
+    def buildTable(self):
+        main = tk.Frame(self.root, padx=5, pady=10)
+        main.pack(side="left", fill="both", expand=True)
+
+        self.heading = tk.Label(main, text="", font=("Arial", 14, "bold"), anchor="w")
+        self.heading.pack(fill="x")
+
+        table_frame = tk.Frame(main)
+        table_frame.pack(fill="both", expand=True, pady=5)
+        self.tree = ttk.Treeview(table_frame, show="headings", selectmode="browse",
+                                 columns=[c[0] for c in self.COLUMNS])
+        for key, title, width in self.COLUMNS:
+            self.tree.heading(key, text=title)
+            self.tree.column(key, width=width, anchor="w" if key == "name" else "center")
+        scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        self.tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        self.summary = tk.Label(main, text="", font=("Arial", 11), anchor="w")
+        self.summary.pack(fill="x")
+
+    # Display helper 
+    def showStudents(self, students, heading, summary_text=None):
+        """Fill the table with the given students (shared by every menu item)."""
+        self.tree.delete(*self.tree.get_children())
+        for s in students:
+            self.tree.insert("", "end", iid=str(s.code),
+                             values=(s.name, s.code, s.coursework_total, s.exam,
+                                     f"{s.percentage:.1f}%", s.grade))
+        self.heading.config(text=heading)
+        self.summary.config(text=summary_text or f"Showing {len(students)} record(s)")
+
+    #  Menu items 1-4 
+    def viewAll(self, select_code=None):
+        count, average = classSummary(self.students)
+        self.showStudents(self.students, "All student records",
+                          f"Students in class: {count}     Class average: {average:.1f}%")
+        if select_code is not None and self.tree.exists(str(select_code)):
+            self.tree.selection_set(str(select_code))
+            self.tree.see(str(select_code))
+
+    def viewIndividual(self):
+        text = simpledialog.askstring("Find student",
+                                      "Enter a student name or number:", parent=self.root)
+        if text is None:
+            return
+        matches = findStudents(self.students, text)
+        if not matches:
+            messagebox.showinfo("Not found", f"No student matches '{text.strip()}'.")
+            return
+        self.showStudents(matches, f"Search results for '{text.strip()}'")
+
+    def showExtreme(self, pick, label):
+        """Show the student(s) with the highest/lowest total. `pick` is max or min.
+        Ties are all shown rather than choosing one arbitrarily."""
+        if not self.students:
+            messagebox.showinfo("No data", "There are no student records.")
+            return
+        target = pick(s.total for s in self.students)
+        winners = [s for s in self.students if s.total == target]
+        self.showStudents(winners, f"{label} total score ({target} / {MAX_TOTAL})")
+
+    def showHighest(self):
+        self.showExtreme(max, "Highest")
+
+    def showLowest(self):
+        self.showExtreme(min, "Lowest")
+
+
+
+def main():
+    root = tk.Tk()
+    path = findDataFile()
+    if path is None:
+        messagebox.showerror("File not found",
+                             f"Could not find {DATA_FILE}.\nPlace it next to this script.")
+        root.destroy()
+        return
+
+    students, problems = loadStudents(path)
+    if problems:
+        messagebox.showwarning("Some records were skipped", "\n".join(problems))
+
+    StudentManager(root, path, students)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()
