@@ -3,23 +3,13 @@ import math
 import random
 import tkinter as tk
 
-# This is my version. It only uses Tkinter's own image
-# support, so there is nothing extra to install.
-
 # ##= IMAGE SETTINGS =##
-# images in the SAME folder as this script:
-#   background.png  
-#   logo.png       
-#   icon.png      
 
 BACKGROUND_IMAGE = "math img.jpg"
 LOGO_IMAGE = "logo.png"
-
-# Window (title bar) icon. 
 ICON_IMAGE = "icon.png"
 
-LOGO_SIZE = 70      # logo is shrunk to fit inside this many pixels
-
+LOGO_SIZE = 70
 IMAGE_EXTENSIONS = (".png",)
 
 # ##= COLOUR SETTINGS =##
@@ -30,26 +20,31 @@ BLUE = "#176B9A"
 DARK_BLUE = "#105477"
 LIGHT_BLUE = "#DCECF7"
 WHITE = "#FFFFFF"
-BODY = "#4E2A78"          # middle box: a little lighter violet (mix of blue, red and dark)
-BODY_TEXT = "#FFFFFF"     # main text on the middle box
-BODY_ACCENT = "#8EC4EA"   # light blue text on the middle box
-BODY_MUTED = "#D2C3E8"    # soft lilac text on the middle box
-OK_GREEN = "#5EE6A8"      # bright green on the dark box
-BAD_RED = "#FF7A8C"       # bright red on the dark box
+
+BODY = "#4E2A78"
+BODY_TEXT = "#FFFFFF"
+BODY_ACCENT = "#8EC4EA"
+BODY_MUTED = "#D2C3E8"
+
+OK_GREEN = "#5EE6A8"
+BAD_RED = "#FF7A8C"
+
 GREEN = "#16845B"
 RED = "#C33D50"
 GREY = "#4A5A6A"
-HEADER_BLUE = "#8EC4EA"   # slightly deeper blue title band inside the card
-BORDER = "#E8618C"        # rose-pink border for the card and boxes
-BORDER_HOVER = "#FFB703"  # golden border when hovering
+
+HEADER_BLUE = "#8EC4EA"
+BORDER = "#E8618C"
+BORDER_HOVER = "#FFB703"
 
 TOTAL_QUESTIONS = 10
-CARD_WIDTH = 660          # minimum width of the content area inside the card (a little bigger)
-PROGRESS_W = 640          # width of the progress bar
+CARD_WIDTH = 660
+PROGRESS_W = 640
 
+
+# ##= IMAGE SEARCH =##
 
 def search_folders():
-    """Folders where images are looked for: script folder, then current folder."""
 
     folders = []
 
@@ -63,63 +58,79 @@ def search_folders():
     return folders
 
 
-def find_image(file_name, fallback_names):
-    """Finds an image by the given name, or by background./logo. style names."""
+def find_image(file_name, fallback_names=None):
+
+    if fallback_names is None:
+        fallback_names = []
 
     folders = search_folders()
 
     if file_name:
+
         if os.path.isabs(file_name) and os.path.isfile(file_name):
             return file_name
 
         for folder in folders:
+
             candidate = os.path.join(folder, file_name)
+
             if os.path.isfile(candidate):
                 return candidate
 
     for folder in folders:
+
         for name in fallback_names:
+
             for ext in IMAGE_EXTENSIONS:
+
                 candidate = os.path.join(folder, name + ext)
+
                 if os.path.isfile(candidate):
                     return candidate
 
     return None
 
 
+# ##= MATH ICON =##
+
 def make_math_icon(size=64):
-    """Draws a small math icon (+  -  x  =) using only Tkinter's PhotoImage."""
 
     img = tk.PhotoImage(width=size, height=size)
 
-    # The pink border, then navy square inside it
     img.put(BORDER, to=(0, 0, size, size))
     img.put(NAVY, to=(4, 4, size - 4, size - 4))
 
-    #  The plus sign  at (top-left)
     img.put(WHITE, to=(11, 19, 29, 22))
     img.put(WHITE, to=(18, 12, 21, 29))
 
-    #  The minus sign at (top-right)
     img.put(BORDER_HOVER, to=(35, 19, 53, 22))
 
-    # The multiplication sign at (bottom-left) - two diagonal lines
     for i in range(-8, 9):
-        img.put(HEADER_BLUE, to=(20 + i - 1, 44 + i - 1, 20 + i + 2, 44 + i + 2))
-        img.put(HEADER_BLUE, to=(20 + i - 1, 44 - i - 1, 20 + i + 2, 44 - i + 2))
 
-    # THE  equals sign (bottom-right)
+        img.put(
+            HEADER_BLUE,
+            to=(20 + i - 1, 44 + i - 1, 20 + i + 2, 44 + i + 2)
+        )
+
+        img.put(
+            HEADER_BLUE,
+            to=(20 + i - 1, 44 - i - 1, 20 + i + 2, 44 - i + 2)
+        )
+
     img.put(WHITE, to=(35, 40, 53, 43))
     img.put(WHITE, to=(35, 47, 53, 50))
 
     return img
 
 
+# ##= MAIN APPLICATION =##
+
 class MathQuest:
 
     def __init__(self, root):
 
         self.root = root
+
         self.root.title("MATH QUIZ")
         self.root.geometry("960x930")
         self.root.minsize(820, 880)
@@ -130,40 +141,45 @@ class MathQuest:
         self.question_number = 0
         self.attempt = 1
 
+        self.minimum = 1
+        self.maximum = 9
+
+        self.answer_locked = False
+
         self.loadWindowIcon()
         self.loadLogo()
         self.createBackground()
+
         self.displayMenu()
 
-    # ##= WINDOW ICON (TITLE BAR) =##
+    # ##= WINDOW ICON =##
 
     def loadWindowIcon(self):
-        """Replaces the default Tk feather icon with a math icon."""
 
         self.icon_photo = None
 
-        # 1)  The user's own icon file
         if ICON_IMAGE:
+
             path = find_image(ICON_IMAGE, ["icon"])
 
             if path:
+
                 try:
                     self.icon_photo = tk.PhotoImage(file=path)
-                except Exception as error:
-                    print(f"Could not load icon image: {error}")
-                    self.icon_photo = None
 
-        # 2) The built-in math icon
+                except Exception as error:
+                    print(f"Could not load icon: {error}")
+
         if self.icon_photo is None:
             self.icon_photo = make_math_icon()
 
-        # The reference (self.icon_photo)
         try:
             self.root.iconphoto(True, self.icon_photo)
+
         except Exception as error:
             print(f"Could not set window icon: {error}")
 
-    # ##= LOGO IMAGE =##
+    # ##= LOGO =##
 
     def loadLogo(self):
 
@@ -178,9 +194,9 @@ class MathQuest:
             return
 
         try:
+
             logo = tk.PhotoImage(file=path)
 
-            # shrink big logos with a whole-number factor
             factor = max(
                 1,
                 math.ceil(logo.width() / LOGO_SIZE),
@@ -190,10 +206,12 @@ class MathQuest:
             self.logo_photo = logo.subsample(factor)
 
         except Exception as error:
-            print(f"Could not load logo image: {error}")
+
+            print(f"Could not load logo: {error}")
+
             self.logo_photo = None
 
-    # ##= BACKGROUND IMAGE =##
+    # ##= BACKGROUND =##
 
     def createBackground(self):
 
@@ -202,49 +220,64 @@ class MathQuest:
             highlightthickness=0,
             bg=BG
         )
-        self.bg_canvas.place(x=0, y=0, relwidth=1, relheight=1)
 
-        self.bg_source = None      # original image
-        self.bg_photo = None       # keeps a reference so Tk doesn't discard it
+        self.bg_canvas.place(
+            x=0,
+            y=0,
+            relwidth=1,
+            relheight=1
+        )
+
+        self.bg_source = None
+        self.bg_photo = None
         self.resize_job = None
 
         if BACKGROUND_IMAGE:
+
             path = find_image(BACKGROUND_IMAGE, ["background", "bg"])
+
             if path:
                 self.setBackground(path)
 
         self.bg_canvas.bind("<Configure>", self.onResize)
+
         self.drawBackground()
 
     def setBackground(self, path):
-        """Loads a PNG or GIF file. Returns True if it worked."""
 
         try:
+
             source = tk.PhotoImage(file=path)
 
         except Exception as error:
-            print(f"Could not load background image: {error}")
-            print("Only PNG or GIF files work in this version.")
+
+            print(f"Could not load background: {error}")
+            print("Only PNG and GIF images are supported.")
+
             return False
 
         self.bg_source = source
+
         self.drawBackground()
+
         return True
 
     def onResize(self, event=None):
 
-        # waiting until the user stops resizing, so the window stays smooth
         if self.resize_job is not None:
             self.root.after_cancel(self.resize_job)
 
-        self.resize_job = self.root.after(60, self.drawBackground)
+        self.resize_job = self.root.after(
+            60,
+            self.drawBackground
+        )
 
     def drawBackground(self, event=None):
 
         self.resize_job = None
 
-        # no image loaded -> use the original gradient
         if self.bg_source is None:
+
             self.drawGradient()
             return
 
@@ -253,32 +286,36 @@ class MathQuest:
 
         if w < 50:
             w = 900
+
         if h < 50:
             h = 820
 
         try:
+
             iw = self.bg_source.width()
             ih = self.bg_source.height()
 
-            # how much the image must change to cover the whole window
             scale = max(w / iw, h / ih)
 
             if scale > 1:
-                # The image is too small -> enlarge by a whole number
+
                 photo = self.bg_source.zoom(math.ceil(scale))
 
             elif scale < 0.5:
-                # The image is much bigger -> shrink by a whole number
+
                 photo = self.bg_source.subsample(int(1 / scale))
 
             else:
-                # already big enough -> use as it is (edges are cropped)
+
                 photo = self.bg_source
 
         except Exception as error:
-            print(f"Could not draw background image: {error}")
+
+            print(f"Could not draw background: {error}")
+
             self.bg_source = None
             self.drawGradient()
+
             return
 
         self.bg_photo = photo
@@ -287,11 +324,13 @@ class MathQuest:
         self.bg_canvas.delete("bg_image")
 
         self.bg_canvas.create_image(
-            w // 2, h // 2,
+            w // 2,
+            h // 2,
             image=self.bg_photo,
             anchor="center",
             tags="bg_image"
         )
+
         self.bg_canvas.tag_lower("bg_image")
 
     def drawGradient(self, event=None):
@@ -301,34 +340,42 @@ class MathQuest:
 
         if w < 50:
             w = 900
+
         if h < 50:
             h = 820
 
-        # Colours deep blue -> purple -> deep red, blended along the diagonal
         stops = [
-            (0.00, (8, 18, 82)),      # deep blue
-            (0.50, (82, 24, 128)),    # purple
-            (1.00, (140, 14, 40)),    # deep red
+            (0.00, (8, 18, 82)),
+            (0.50, (82, 24, 128)),
+            (1.00, (140, 14, 40))
         ]
 
         def colour_at(t):
+
             for (t0, c0), (t1, c1) in zip(stops, stops[1:]):
+
                 if t <= t1:
+
                     k = (t - t0) / (t1 - t0)
+
                     return "#%02x%02x%02x" % tuple(
-                        int(c0[i] + (c1[i] - c0[i]) * k) for i in range(3)
+                        int(c0[i] + (c1[i] - c0[i]) * k)
+                        for i in range(3)
                     )
+
             return "#%02x%02x%02x" % stops[-1][1]
 
         bands = 90
+
         self.bg_canvas.delete("gradient")
         self.bg_canvas.delete("bg_image")
 
-        # each band is a diagonal strip running from the top-left to the bottom-right
         for i in range(bands):
+
             a = 2.0 * i / bands
             b = 2.0 * (i + 1) / bands + 0.01
-            mid = (a + b) / 4          # 0..1 across the diagonal
+
+            mid = (a + b) / 4
 
             self.bg_canvas.create_polygon(
                 a * w, 0,
@@ -342,11 +389,9 @@ class MathQuest:
 
         self.bg_canvas.tag_lower("gradient")
 
-    # ##= ONE BOX LAYOUT =##
+    # ##= SCREEN DESIGN =##
 
     def screen(self, title, subtitle, footer_text):
-        """Builds ONE card holding the header, the content and the footer.
-        Returns the content area where each screen adds its widgets."""
 
         self.clear_screen()
 
@@ -357,21 +402,22 @@ class MathQuest:
             highlightcolor=BORDER,
             highlightthickness=4
         )
+
         card.pack(expand=True)
 
-        # ----- header band -----
         head = tk.Frame(card, bg=HEADER_BLUE)
         head.pack(fill="x")
 
         title_top = 32
 
-        # logo image (if a logo file was found)
         if self.logo_photo is not None:
+
             tk.Label(
                 head,
                 image=self.logo_photo,
                 bg=HEADER_BLUE
             ).pack(pady=(20, 0))
+
             title_top = 8
 
         tk.Label(
@@ -390,17 +436,28 @@ class MathQuest:
             bg=HEADER_BLUE
         ).pack(pady=(0, 28))
 
-        # pink accent line under the header band
-        tk.Frame(card, bg=BORDER, height=4).pack(fill="x")
+        tk.Frame(
+            card,
+            bg=BORDER,
+            height=4
+        ).pack(fill="x")
 
-        # -# The content area #-
         body = tk.Frame(card, bg=BODY)
-        body.pack(fill="both", expand=True, padx=50, pady=(46, 42))
 
-        # invisible spacer keeps the card the same width on every screen
-        tk.Frame(body, bg=BODY, width=CARD_WIDTH, height=1).pack()
+        body.pack(
+            fill="both",
+            expand=True,
+            padx=50,
+            pady=(46, 42)
+        )
 
-        # -# The footer strip -#
+        tk.Frame(
+            body,
+            bg=BODY,
+            width=CARD_WIDTH,
+            height=1
+        ).pack()
+
         tk.Label(
             card,
             text=footer_text,
@@ -414,12 +471,12 @@ class MathQuest:
 
     def clear_screen(self):
 
-        # keep the background canvas, remove everything else
         for widget in self.root.winfo_children():
+
             if widget is not self.bg_canvas:
                 widget.destroy()
 
-    # ##= DISPLAY MENU =##
+    # ##= DIFFICULTY MENU =##
 
     def displayMenu(self):
 
@@ -445,31 +502,67 @@ class MathQuest:
             bg=BODY
         ).pack(pady=(0, 12))
 
-        # The levels listed in alphabetical order, each in its own blue shade
-        # (title, description, level, box colour, text colour, hover colour)
         levels = [
-            ("ADVANCED", "Four Digit Numbers (1000-9999)", "advanced",
-             "#1F4E8C", WHITE, "#2B66B3"),       # dark blue
-            ("EASY", "Single Digit Numbers (1-9)", "easy",
-             "#CDE9FA", NAVY, "#B3DBF4"),        # light blue
-            ("MODERATE", "Double Digit Numbers (10-99)", "moderate",
-             "#3A8FD6", WHITE, "#5BA9E6")        # medium blue
+
+            (
+                "ADVANCED",
+                "Four Digit Numbers (1000-9999)",
+                "advanced",
+                "#1F4E8C",
+                WHITE,
+                "#2B66B3"
+            ),
+
+            (
+                "EASY",
+                "Single Digit Numbers (1-9)",
+                "easy",
+                "#CDE9FA",
+                NAVY,
+                "#B3DBF4"
+            ),
+
+            (
+                "MODERATE",
+                "Double Digit Numbers (10-99)",
+                "moderate",
+                "#3A8FD6",
+                WHITE,
+                "#5BA9E6"
+            )
         ]
 
         for title, description, level, box_bg, box_fg, box_hover in levels:
-            self.levelBox(body, title, description, level, box_bg, box_fg, box_hover)
+
+            self.levelBox(
+                body,
+                title,
+                description,
+                level,
+                box_bg,
+                box_fg,
+                box_hover
+            )
 
         tk.Label(
             body,
-            text="10 QUESTIONS  |  100 POINTS",
+            text="10 QUESTIONS | 100 POINTS",
             font=("Arial", 10, "bold"),
             fg=BODY_MUTED,
             bg=BODY
         ).pack(pady=(14, 4))
 
-    def levelBox(self, parent, title, description, level, box_bg, box_fg, box_hover):
+    def levelBox(
+        self,
+        parent,
+        title,
+        description,
+        level,
+        box_bg,
+        box_fg,
+        box_hover
+    ):
 
-        # outer frame makes the coloured box border
         box = tk.Frame(
             parent,
             bg=BODY,
@@ -477,6 +570,7 @@ class MathQuest:
             highlightcolor=BORDER,
             highlightthickness=3
         )
+
         box.pack(pady=12)
 
         button = tk.Button(
@@ -494,14 +588,25 @@ class MathQuest:
             width=40,
             height=2
         )
+
         button.pack(padx=3, pady=3)
 
         def on_enter(event):
-            box.config(highlightbackground=BORDER_HOVER, highlightcolor=BORDER_HOVER)
+
+            box.config(
+                highlightbackground=BORDER_HOVER,
+                highlightcolor=BORDER_HOVER
+            )
+
             button.config(bg=box_hover)
 
         def on_leave(event):
-            box.config(highlightbackground=BORDER, highlightcolor=BORDER)
+
+            box.config(
+                highlightbackground=BORDER,
+                highlightcolor=BORDER
+            )
+
             button.config(bg=box_bg)
 
         button.bind("<Enter>", on_enter)
@@ -524,14 +629,17 @@ class MathQuest:
     def startQuiz(self, level):
 
         if level == "easy":
+
             self.minimum = 1
             self.maximum = 9
 
         elif level == "moderate":
+
             self.minimum = 10
             self.maximum = 99
 
         else:
+
             self.minimum = 1000
             self.maximum = 9999
 
@@ -553,6 +661,22 @@ class MathQuest:
             "FIRST ATTEMPT = 10 POINTS | SECOND ATTEMPT = 5 POINTS"
         )
 
+        # ##= BACK BUTTON ADDED =##
+
+        tk.Button(
+            body,
+            text="← BACK TO MENU",
+            command=self.displayMenu,
+            font=("Arial", 10, "bold"),
+            bg=LIGHT_BLUE,
+            fg=NAVY,
+            activebackground=HEADER_BLUE,
+            relief="flat",
+            cursor="hand2",
+            padx=20,
+            pady=8
+        ).pack(anchor="w", pady=(0, 15))
+
         top = tk.Frame(body, bg=BODY)
         top.pack(fill="x")
 
@@ -563,6 +687,7 @@ class MathQuest:
             fg=BODY_ACCENT,
             bg=BODY
         )
+
         self.question_count.pack(side="left")
 
         self.score_label = tk.Label(
@@ -572,6 +697,7 @@ class MathQuest:
             fg=OK_GREEN,
             bg=BODY
         )
+
         self.score_label.pack(side="right")
 
         self.progress_label = tk.Label(
@@ -581,6 +707,7 @@ class MathQuest:
             fg=BODY_MUTED,
             bg=BODY
         )
+
         self.progress_label.pack(anchor="w", pady=(8, 3))
 
         self.progress = tk.Canvas(
@@ -590,6 +717,7 @@ class MathQuest:
             bg="#7C65A8",
             highlightthickness=0
         )
+
         self.progress.pack(pady=(0, 12))
 
         tk.Label(
@@ -607,6 +735,7 @@ class MathQuest:
             fg=BODY_TEXT,
             bg=BODY
         )
+
         self.question_label.pack(pady=8)
 
         self.answer_entry = tk.Entry(
@@ -617,6 +746,7 @@ class MathQuest:
             bd=1,
             relief="solid"
         )
+
         self.answer_entry.pack(ipady=8, pady=8)
 
         self.answer_entry.bind(
@@ -631,6 +761,7 @@ class MathQuest:
             fg=BODY_ACCENT,
             bg=BODY
         )
+
         self.attempt_label.pack(pady=4)
 
         self.submit_button = tk.Button(
@@ -647,6 +778,7 @@ class MathQuest:
             padx=35,
             pady=12
         )
+
         self.submit_button.pack(pady=10)
 
         self.feedback = tk.Label(
@@ -656,6 +788,7 @@ class MathQuest:
             fg=BODY_MUTED,
             bg=BODY
         )
+
         self.feedback.pack(pady=(6, 4))
 
     # ##= DISPLAY PROBLEM =##
@@ -663,6 +796,7 @@ class MathQuest:
     def displayProblem(self):
 
         self.question_number += 1
+
         self.attempt = 1
         self.answer_locked = False
 
@@ -672,9 +806,11 @@ class MathQuest:
         self.operation = self.decideOperation()
 
         if self.operation == "+":
+
             self.correct_answer = self.num1 + self.num2
 
         else:
+
             self.correct_answer = self.num1 - self.num2
 
         self.question_label.config(
@@ -696,7 +832,8 @@ class MathQuest:
         )
 
         self.progress.create_rectangle(
-            0, 0, progress_width, 9,
+            0, 0,
+            progress_width, 9,
             fill="#5DB0F0",
             outline=""
         )
@@ -739,9 +876,11 @@ class MathQuest:
                 text="Please enter your answer!",
                 fg=BAD_RED
             )
+
             return
 
         try:
+
             answer = int(user_input)
 
         except ValueError:
@@ -750,13 +889,17 @@ class MathQuest:
                 text="Please enter a valid whole number!",
                 fg=BAD_RED
             )
+
             return
 
         if self.isCorrect(answer):
 
             if self.attempt == 1:
+
                 points = 10
+
             else:
+
                 points = 5
 
             self.score += points
@@ -829,31 +972,37 @@ class MathQuest:
 
             self.displayResults()
 
-    #   ##= DISPLAY RESULTS =##
+    # ##= RESULTS =##
 
     def displayResults(self):
 
         if self.score >= 90:
+
             grade = "A+"
             result = "OUTSTANDING PERFORMANCE!"
 
         elif self.score >= 80:
+
             grade = "A"
             result = "EXCELLENT WORK!"
 
         elif self.score >= 70:
+
             grade = "B"
             result = "GREAT EFFORT!"
 
         elif self.score >= 60:
+
             grade = "C"
             result = "GOOD TRY!"
 
         elif self.score >= 50:
+
             grade = "D"
             result = "KEEP PRACTISING!"
 
         else:
+
             grade = "NEEDS PRACTICE"
             result = "TRY AGAIN TO IMPROVE!"
 
