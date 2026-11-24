@@ -1,6 +1,6 @@
+import os
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog, filedialog
-from pathlib import Path
 
 # ##= STUDENT MANAGER =##
 
@@ -51,14 +51,14 @@ def draw_gradient(canvas, top, bottom, default_size=(1280, 900)):
 
 # ##= FILE LOCATION (SEARCHES SEVERAL PLACES) =##
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FILE_NAME = "studentMarks.txt"
 
 SEARCH_PATHS = [
-    BASE_DIR / FILE_NAME,
-    BASE_DIR / "resources" / FILE_NAME,
-    Path.cwd() / FILE_NAME,
-    Path.cwd() / "resources" / FILE_NAME,
+    os.path.join(BASE_DIR, FILE_NAME),
+    os.path.join(BASE_DIR, "resources", FILE_NAME),
+    os.path.join(os.getcwd(), FILE_NAME),
+    os.path.join(os.getcwd(), "resources", FILE_NAME),
 ]
 
 FILE_PATH = None      # set when the file is found
@@ -109,12 +109,12 @@ def load_window_icon():
 
     # 1) the user's own icon file (PNG)
     if ICON_IMAGE:
-        for folder in (BASE_DIR, Path.cwd()):
-            candidate = folder / ICON_IMAGE
+        for folder in (BASE_DIR, os.getcwd()):
+            candidate = os.path.join(folder, ICON_IMAGE)
 
-            if candidate.is_file():
+            if os.path.isfile(candidate):
                 try:
-                    ICON_PHOTO = tk.PhotoImage(file=str(candidate))
+                    ICON_PHOTO = tk.PhotoImage(file=candidate)
                     break
                 except tk.TclError as error:
                     print(f"Could not load icon image: {error}")
@@ -200,7 +200,7 @@ def load_students():
 
     # 1)  using the first one that has students
     for path in SEARCH_PATHS:
-        if path.exists():
+        if os.path.exists(path):
             data, skipped = read_file(path)
             if data:
                 students = data
@@ -221,15 +221,14 @@ def load_students():
     )
 
     if chosen:
-        path = Path(chosen)
-        data, skipped = read_file(path)
-        FILE_PATH = path
+        data, skipped = read_file(chosen)
+        FILE_PATH = chosen
         students = data
         skipped_lines = skipped
         return bool(data)
 
     # 3) nothing chosen: new file is created only when the first student is saved
-    FILE_PATH = BASE_DIR / FILE_NAME
+    FILE_PATH = os.path.join(BASE_DIR, FILE_NAME)
     return False
 
 
@@ -239,9 +238,9 @@ def save_students():
     global FILE_PATH
 
     if FILE_PATH is None:
-        FILE_PATH = BASE_DIR / FILE_NAME
+        FILE_PATH = os.path.join(BASE_DIR, FILE_NAME)
 
-    FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    os.makedirs(os.path.dirname(FILE_PATH), exist_ok=True)
 
     with open(FILE_PATH, "w", encoding="utf-8") as file:
         file.write(str(len(students)) + "\n")
@@ -1039,7 +1038,7 @@ loaded = load_students()
 show_all()
 
 if loaded:
-    msg = f"Loaded {len(students)} students from: {FILE_PATH.name}"
+    msg = f"Loaded {len(students)} students from: {os.path.basename(FILE_PATH)}"
     if skipped_lines:
         msg += f"   ({skipped_lines} invalid lines skipped)"
     status_label.config(text=msg)
